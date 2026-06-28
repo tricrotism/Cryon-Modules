@@ -8,7 +8,8 @@ rootProject.name = "cryon-modules"
 // Add a module here when you create it. The core API (com.tricrotism:common / :paper-api) is NOT
 // included — publish it once from the Cryon repo:
 //   ../Cryon/gradlew -p ../Cryon :common:publishToMavenLocal :paper-api:publishToMavenLocal
-includeBuild("cryon-example-feature")
 includeBuild("cryon-visibility-api")
 includeBuild("cryon-visibility")
 includeBuild("cryon-spawn")
+includeBuild("cryon-jumppads-api")
+includeBuild("cryon-jumppads")

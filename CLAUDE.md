@@ -26,8 +26,9 @@ what's specific to *writing a module* and isn't repeated there. When you add mod
 4. **Ship a `lang/en_US.properties`** bundle — the core auto-scans and registers it on load.
 5. Build the plain `jar` → drop into the server's `plugins/Cryon/modules/`.
 
-Start from **`cryon-example-feature`** — it exercises i18n, `Events`, `Schedulers`, `CryonNumber`, and
-`ItemBuilder` end to end.
+Start from **`cryon-spawn`** — the smallest end-to-end feature (one command, an i18n bundle, a
+hand-rolled config, and consuming a peer's service). For the extensible service-plus-contract shape,
+read the **`cryon-jumppads`** / **`cryon-jumppads-api`** pair.
 
 ---
 
@@ -43,11 +44,11 @@ Start from **`cryon-example-feature`** — it exercises i18n, `Events`, `Schedul
 
 **`/cryon reload <id>` = `onDisable()` then `onEnable()` — it does NOT re-run `onLoad()`.** So:
 
-| Put it in… | …if it's | Survives reload? |
-|------------|----------|------------------|
-| `onLoad`   | one-time: service registration, **command registration** | yes (not re-run) |
-| `onEnable` | re-wireable: listeners, `Schedulers` tasks, peer rules | re-created each reload |
-| `onDisable`| teardown for everything in `onEnable` | — |
+| Put it in…  | …if it's                                                 | Survives reload?       |
+|-------------|----------------------------------------------------------|------------------------|
+| `onLoad`    | one-time: service registration, **command registration** | yes (not re-run)       |
+| `onEnable`  | re-wireable: listeners, `Schedulers` tasks, peer rules   | re-created each reload |
+| `onDisable` | teardown for everything in `onEnable`                    | —                      |
 
 Registering a command in `onEnable` will **double-register or crash on reload** — Paper's `COMMANDS`
 lifecycle only accepts handlers during the core's enable window. Always register commands in `onLoad`.
@@ -62,15 +63,20 @@ i.e. a thin **`*-api` jar dropped in `plugins/Cryon/api/`** (loaded once, so eve
 the same type). Bundling the api into a feature jar instead = two `Class` objects = `ClassCastException`.
 
 **Provider** (registers in `onLoad`):
+
 ```kotlin
 services.register(VisibilityService::class, manager)
 ```
+
 **Consumer** (resolves in `onEnable`, in any other repo):
+
 ```kotlin
 val vis = services.find(VisibilityService::class) ?: return   // find, NOT get — peer may be absent
 vis.addRule(myRule)
 ```
+
 Rules:
+
 - **`find` (nullable) for cross-module peers** — never `get`; an independent repo may not be installed.
   Degrade gracefully when it's null.
 - **Whatever you add to a peer, remove on disable** — a rule, a handle, a registration. A lingering
@@ -87,12 +93,14 @@ Reference: **`cryon-visibility-api`** (contract) implemented by **`cryon-visibil
 
 `@Command`/`@Subcommand`/`@Permission`/`@Arg` classes, registered from `onLoad` via the `PaperModule`
 helper:
+
 ```kotlin
 override fun onLoad(context: ModuleContext) {
     super.onLoad(context)
     registerCommands(MyCommands(deps))   // COMMANDS-window registration + auto-gated on enabled-state
 }
 ```
+
 `registerCommands` gates every command on `isEnabled()`, so while the module is disabled
 (`/cryon disable <id>`) its commands are unavailable (can't run, not tab-completed) and reappear on
 re-enable — no per-command checks, no re-registration. Don't hand-roll the
@@ -135,11 +143,13 @@ abstraction is added, document it here.
 
 **Build everything at once** — from this `Cryon-Modules/` root (a composite build, see
 `settings.gradle.kts`):
+
 ```bash
 ./gradlew buildAll        # build + test every module; jars land in */build/libs/
 ./gradlew publishApis     # publish every *-api contract jar to mavenLocal
 ./gradlew cleanAll
 ```
+
 `buildAll` substitutes each `*-api` dependency with its sibling build automatically, so consumers see
 the live contract without a mavenLocal round-trip. **Add new modules to the root `settings.gradle.kts`
 `includeBuild(...)` list.**
@@ -156,9 +166,10 @@ of mavenLocal.
 
 ## Reference modules in this repo
 
-| Module                  | Shows                                                            |
-|-------------------------|-----------------------------------------------------------------|
-| `cryon-example-feature` | The end-to-end starter: i18n, events, schedulers, items         |
-| `cryon-visibility`      | A rule-driven engine + the `vanish` feature; publishes a service |
-| `cryon-visibility-api`  | A thin cross-module contract jar for the `api/` layer            |
-| `cryon-spawn`           | Consuming another module's service (`find` + graceful absence)   |
+| Module                 | Shows                                                                                             |
+|------------------------|---------------------------------------------------------------------------------------------------|
+| `cryon-spawn`          | The starter: a command, i18n, config — and consuming a peer's service (`find` + graceful absence) |
+| `cryon-visibility`     | A rule-driven engine + the `vanish` feature; publishes a service                                  |
+| `cryon-visibility-api` | A thin cross-module contract jar for the `api/` layer                                             |
+| `cryon-jumppads`       | An extensible engine: a priority-ordered, swappable strategy chain                                |
+| `cryon-jumppads-api`   | The contract for extending another module from your own repo                                      |
