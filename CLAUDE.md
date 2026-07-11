@@ -50,8 +50,11 @@ read the **`cryon-jumppads`** / **`cryon-jumppads-api`** pair.
 | `onEnable`  | re-wireable: listeners, `Schedulers` tasks, peer rules   | re-created each reload |
 | `onDisable` | teardown for everything in `onEnable`                    | —                      |
 
-Registering a command in `onEnable` will **double-register or crash on reload** — Paper's `COMMANDS`
-lifecycle only accepts handlers during the core's enable window. Always register commands in `onLoad`.
+Registering a command in `onEnable` **double-registers on reload**: `registerCommands` contributes to
+the core's `CommandService`, and `onEnable` re-runs each reload, so the tree gets added twice. Always
+register commands in `onLoad` (it runs once). The core-owned registry handles the hard part for you:
+a module loaded at runtime (hot-swap, `/cryon load`, `reload-api`) gets its commands spliced into the
+live dispatcher immediately, so there's no longer a "commands only appear after restart" caveat.
 
 ---
 
@@ -121,7 +124,14 @@ re-enable — no per-command checks, no re-registration. Don't hand-roll the
   disable. Or `listen(listener)` (auto-unregisters).
 - **Sounds:** play a `Sound.*` on every player-facing action — silent feedback feels broken.
 - **Thread-safety:** `ConcurrentHashMap` / `Collections.newSetFromMap(...)` for shared state.
-- **Feature flags:** keep each distinct slice behind its own guard so it can be gated independently.
+- **Feature flags:** the core ships `FeatureFlags` (layered: player override > server override >
+  global override > default **on**; SQL-persisted + Redis-synced when configured, in-memory
+  otherwise). Resolve it once (`services.get(FeatureFlags::class)`), `register("SHOP_SELL")` each ID
+  in `onEnable`, and gate **inside** every entry point so a runtime `/cryon flag` toggle bites
+  immediately: commands use the one-liner `flags.guard(player, FLAG)` (acks + returns false); silent
+  paths use `isEnabled(FLAG, player.uniqueId)` — pass the player so per-player overrides apply. One
+  bare-ID flag per distinct slice (`SKILLS_MINING`, `SKILLS_LEVEL_REWARD` — no umbrella `SKILLS`, no
+  gamemode prefixes; gamemode-specific flags pass a scope to `register` instead).
 
 ---
 
@@ -145,10 +155,14 @@ abstraction is added, document it here.
 `settings.gradle.kts`):
 
 ```bash
-./gradlew buildAll        # build + test every module; jars land in */build/libs/
+./gradlew buildAll        # build + test every module; jars collected into build/api/ + build/modules/
 ./gradlew publishApis     # publish every *-api contract jar to mavenLocal
 ./gradlew cleanAll
 ```
+
+`buildAll` mirrors the server layout in the root `build/` folder: every `*-api` jar lands in
+`build/api/` (→ `plugins/Cryon/api/`) and every feature impl jar in `build/modules/`
+(→ `plugins/Cryon/modules/`), so the two folders can be dropped onto a server as-is.
 
 `buildAll` substitutes each `*-api` dependency with its sibling build automatically, so consumers see
 the live contract without a mavenLocal round-trip. **Add new modules to the root `settings.gradle.kts`
@@ -164,12 +178,29 @@ of mavenLocal.
 
 ---
 
+## The survival gamemode
+
+`cryon-survival-api` (the commons contract) plus `cryon-economy`, `cryon-skills`, and `cryon-shop`
+form a worked example of a **whole gamemode assembled from independent modules**: gather resources →
+earn skill XP per action → `/sell` loot for **Shards** → skill levels boost sell prices (a
+`SellModifier` registered across repos) and level-ups pay Shard rewards → climb `/baltop`. Every
+edge crosses the `ServiceRegistry` through the one contract jar; any piece can be absent, disabled,
+or hot-swapped and the rest degrade gracefully. Copy this shape for multi-module features: one
+commons `*-api` jar for the contracts, one repo-independent module per feature, a kill-switch flag
+per slice.
+
+---
+
 ## Reference modules in this repo
 
-| Module                 | Shows                                                                                             |
-|------------------------|---------------------------------------------------------------------------------------------------|
-| `cryon-spawn`          | The starter: a command, i18n, config — and consuming a peer's service (`find` + graceful absence) |
-| `cryon-visibility`     | A rule-driven engine + the `vanish` feature; publishes a service                                  |
-| `cryon-visibility-api` | A thin cross-module contract jar for the `api/` layer                                             |
-| `cryon-jumppads`       | An extensible engine: a priority-ordered, swappable strategy chain                                |
-| `cryon-jumppads-api`   | The contract for extending another module from your own repo                                      |
+| Module                 | Shows                                                                                              |
+|------------------------|----------------------------------------------------------------------------------------------------|
+| `cryon-spawn`          | The starter: a command, i18n, config — and consuming a peer's service (`find` + graceful absence)  |
+| `cryon-visibility`     | A rule-driven engine + the `vanish` feature; publishes a service                                   |
+| `cryon-visibility-api` | A thin cross-module contract jar for the `api/` layer                                              |
+| `cryon-jumppads`       | An extensible engine: a priority-ordered, swappable strategy chain                                 |
+| `cryon-jumppads-api`   | The contract for extending another module from your own repo                                       |
+| `cryon-survival-api`   | A gamemode-wide commons jar: three contracts (economy, skills, shop) shared by sibling modules     |
+| `cryon-economy`        | `PackedDecimal` balances, batched dirty-bit persistence, an admin ledger, per-slice feature flags  |
+| `cryon-skills`         | Event-driven progression + anti-abuse tracking; *extends* a peer (the sell boost) and pays rewards |
+| `cryon-shop`           | A config-priced sell engine with a modifier chain; resolves its economy peer per dispatch          |

@@ -1,4 +1,4 @@
-rootProject.name = "cryon-modules"
+rootProject.name = "Cryon-Modules"
 
 // Composite build: each module stays a fully independent build (its own settings.gradle.kts +
 // gradlew), included here only so `./gradlew buildAll` can drive them together. A consumer's
@@ -13,3 +13,11 @@ includeBuild("cryon-visibility")
 includeBuild("cryon-spawn")
 includeBuild("cryon-jumppads-api")
 includeBuild("cryon-jumppads")
+includeBuild("cryon-survival-api")
+includeBuild("cryon-economy")
+includeBuild("cryon-skills")
+includeBuild("cryon-shop")
+
+// Ashvale — hardcore siege-factions gamemode (D:\Gamemode-Scopes\Ashvale). Phase 1 foundation.
+includeBuild("ashvale-factions-api")
+includeBuild("ashvale-factions")
